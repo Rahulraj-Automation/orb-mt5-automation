@@ -69,3 +69,22 @@ Working local automation infrastructure with MT5 integration and webhook executi
 ## Strategy Performance
 
 ![Strategy Report](screenshots/strategy-report.jpeg)
+## Instrument Optimization
+
+The ORB framework uses instrument-specific execution windows and parameter tuning.
+
+### EURUSD
+- Execution Window: 03:00 AM –03:15 AM NY local time
+- Timeframe: 1 Minute
+- Focus: Early session breakout volatility
+
+### NAS100 CFD
+- Execution Window: 09:15–09:30 AM NY local time
+- Timeframe: 1 Minute
+- Focus: US market opening range breakout
+
+The framework dynamically handles:
+- position sizing
+- stop loss
+- take profit
+- webhook-based MT5 execution
