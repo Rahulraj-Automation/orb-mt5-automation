@@ -66,3 +66,6 @@ Working local automation infrastructure with MT5 integration and webhook executi
 - Cloud deployment
 - Dashboard monitoring
 - Advanced trade management
+## Strategy Performance
+
+![Strategy Report](screenshots/strategy-report.jpeg)
