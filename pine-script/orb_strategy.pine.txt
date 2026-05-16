@@ -1,0 +1,237 @@
+//@version=5
+strategy("NY Range Breakout (ORB) AUTO MT5", overlay=true, initial_capital=100000)
+
+//=====================================================
+// INPUTS
+//=====================================================
+riskPercent = input.float(2, "Risk % Per Trade")
+rrr = input.float(2, "Risk Reward Ratio (RRR)", step=0.1)
+
+// SL Mode
+slMode = input.string("High/Low", "Stop Loss Mode", options=["High/Low", "Mid Range"])
+
+//=====================================================
+// DAY FILTER
+//=====================================================
+tradeMonday    = input.bool(true,  "Trade Monday")
+tradeTuesday   = input.bool(true,  "Trade Tuesday")
+tradeWednesday = input.bool(true,  "Trade Wednesday")
+tradeThursday  = input.bool(true,  "Trade Thursday")
+tradeFriday    = input.bool(true,  "Trade Friday")
+
+isMonday    = dayofweek == dayofweek.monday
+isTuesday   = dayofweek == dayofweek.tuesday
+isWednesday = dayofweek == dayofweek.wednesday
+isThursday  = dayofweek == dayofweek.thursday
+isFriday    = dayofweek == dayofweek.friday
+
+allowedDay =
+     (isMonday and tradeMonday) or
+     (isTuesday and tradeTuesday) or
+     (isWednesday and tradeWednesday) or
+     (isThursday and tradeThursday) or
+     (isFriday and tradeFriday)
+
+//=====================================================
+// TIME SETTINGS
+//=====================================================
+tz = input.string("America/New_York", "Timezone")
+
+rangeStartHour   = input.int(3, "Range Start Hour")
+rangeStartMinute = input.int(0, "Range Start Minute")
+
+rangeEndHour     = input.int(3, "Range End Hour")
+rangeEndMinute   = input.int(14, "Range End Minute")
+
+rangeLockHour    = input.int(3, "Range Lock Hour")
+rangeLockMinute  = input.int(15, "Range Lock Minute")
+
+//=====================================================
+// OPTIONAL RANGE FILTER
+//=====================================================
+useRangeFilter = input.bool(false, "Use Range Filter")
+
+rangeType = input.string("Points", "Range Type", options=["Points", "Pips"])
+
+rangeMin = input.float(40, "Range From")
+rangeMax = input.float(60, "Range To")
+
+//=====================================================
+// OPTIONAL EOD CLOSE
+//=====================================================
+useEodClose = input.bool(false, "Use End Of Day Close")
+
+closeHour   = input.int(16, "Close Hour")
+closeMinute = input.int(45, "Close Minute")
+
+//=====================================================
+// TIME CALC
+//=====================================================
+tHour   = hour(time, tz)
+tMinute = minute(time, tz)
+
+//=====================================================
+// RANGE CONDITION
+//=====================================================
+inRange =
+     (tHour == rangeStartHour and
+     tMinute >= rangeStartMinute and
+     tMinute <= rangeEndMinute)
+
+//=====================================================
+// VARIABLES
+//=====================================================
+var float rangeHigh = na
+var float rangeLow  = na
+var bool rangeFixed = false
+var bool tradeTaken = false
+
+//=====================================================
+// RESET DAILY
+//=====================================================
+if ta.change(time("D"))
+    rangeHigh := na
+    rangeLow := na
+    rangeFixed := false
+    tradeTaken := false
+
+//=====================================================
+// CAPTURE RANGE
+//=====================================================
+if inRange
+    rangeHigh := na(rangeHigh) ? high : math.max(rangeHigh, high)
+    rangeLow  := na(rangeLow)  ? low  : math.min(rangeLow, low)
+
+//=====================================================
+// LOCK RANGE
+//=====================================================
+if (tHour == rangeLockHour and tMinute == rangeLockMinute)
+    rangeFixed := true
+
+//=====================================================
+// MID
+//=====================================================
+rangeMid = (rangeHigh + rangeLow) / 2
+
+//=====================================================
+// RANGE SIZE CALC
+//=====================================================
+rawRange = rangeHigh - rangeLow
+
+rangeValue =
+     rangeType == "Pips"
+     ? rawRange * 10000
+     : rawRange
+
+validRange =
+     not useRangeFilter or
+     (rangeValue >= rangeMin and rangeValue <= rangeMax)
+
+//=====================================================
+// PLOT
+//=====================================================
+plot(rangeHigh, "Range High", color=color.green, linewidth=2)
+plot(rangeLow, "Range Low", color=color.red, linewidth=2)
+plot(rangeMid, "Range Mid", color=color.yellow)
+
+//=====================================================
+// SL
+//=====================================================
+buySL  = slMode == "High/Low" ? rangeLow : rangeMid
+sellSL = slMode == "High/Low" ? rangeHigh : rangeMid
+
+//=====================================================
+// RISK
+//=====================================================
+capital = strategy.equity
+riskAmount = capital * (riskPercent / 100)
+
+buySL_dist  = math.abs(close - buySL)
+sellSL_dist = math.abs(sellSL - close)
+
+buyQty  = buySL_dist > 0 ? riskAmount / buySL_dist : na
+sellQty = sellSL_dist > 0 ? riskAmount / sellSL_dist : na
+
+//=====================================================
+// CONDITIONS
+//=====================================================
+buyCondition =
+     rangeFixed and
+     close > rangeHigh and
+     not tradeTaken and
+     allowedDay and
+     validRange
+
+sellCondition =
+     rangeFixed and
+     close < rangeLow and
+     not tradeTaken and
+     allowedDay and
+     validRange
+
+//=====================================================
+// TARGET
+//=====================================================
+buyTP  = close + (buySL_dist * rrr)
+sellTP = close - (sellSL_dist * rrr)
+
+//=====================================================
+// BUY ENTRY + WEBHOOK ALERT
+//=====================================================
+if (buyCondition and buySL_dist > 0)
+
+    strategy.entry("BUY", strategy.long, qty=buyQty)
+
+    strategy.exit(
+         "BUY EXIT",
+         from_entry="BUY",
+         stop=buySL,
+         limit=buyTP)
+
+    alert(
+     '{"symbol":"EURUSD","action":"buy","qty":"' +
+     str.tostring(buyQty) +
+     '","sl":"' +
+     str.tostring(buySL) +
+     '","tp":"' +
+     str.tostring(buyTP) +
+     '"}',
+     alert.freq_once_per_bar_close)
+
+    tradeTaken := true
+
+//=====================================================
+// SELL ENTRY + WEBHOOK ALERT
+//=====================================================
+if (sellCondition and sellSL_dist > 0)
+
+    strategy.entry("SELL", strategy.short, qty=sellQty)
+
+    strategy.exit(
+         "SELL EXIT",
+         from_entry="SELL",
+         stop=sellSL,
+         limit=sellTP)
+
+    alert(
+     '{"symbol":"EURUSD","action":"sell","qty":"' +
+     str.tostring(sellQty) +
+     '","sl":"' +
+     str.tostring(sellSL) +
+     '","tp":"' +
+     str.tostring(sellTP) +
+     '"}',
+     alert.freq_once_per_bar_close)
+
+    tradeTaken := true
+
+//=====================================================
+// OPTIONAL EOD CLOSE
+//=====================================================
+if useEodClose and (tHour == closeHour and tMinute == closeMinute)
+
+    strategy.close_all(comment="Manual EOD Close")
+
+    alert(
+     '{"symbol":"EURUSD","action":"close_all"}',
+     alert.freq_once_per_bar_close)
